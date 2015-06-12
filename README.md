@@ -1,6 +1,6 @@
 # conutils
-Shell script wrappers for nmcli.
-Author: Giovan Battista Salinetti
-License: GPL
+Shell script wrappers for nmcli.\n
+Author: Giovan Battista Salinetti\n
+License: GNU General Public License\n
 
 conadd - A simple interactive script to add IPv4 connections.
