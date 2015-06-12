@@ -1,0 +1,308 @@
+#!/bin/bash
+
+#*******************************************************#
+#                                                       #
+#     conadd - Interactive network connections tool     #
+#     Author: Giovan Battista Salinetti                 #
+#     Date: 20150612                                    #
+#     Release: 0.1.1                                    #
+#                                                       #
+#*******************************************************#
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+RELEASE="0.1.1"
+
+# Test if the user has root privileges
+if [ $UID -ne 0 ]; then
+  echo "Error: conadd must be used as root"
+  exit 1
+fi
+
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+  echo "conadd - Interactive network connections management tool."
+  echo "This script helps the user to add new IPv4 connections using Network Manager interactively."
+  echo "Usage: $(basename $0)"
+  exit 0
+elif [ "$1" == "-v" ] || [ "$1" == "--version" ]; then
+  echo "conadd - Interactive network connections management tool."
+  echo "Version $RELEASE"
+  exit 0
+fi
+
+# Clear the screen
+clear
+
+echo
+echo "+-------------------------------------------------------+"
+echo "|                                                       |"
+echo "|     conadd - Interactive network connection tool      |"
+echo "|                                                       |"
+echo "+-------------------------------------------------------+"
+echo
+
+
+#*****************************************************************************#
+
+# Begin data collection
+
+# Network interface name
+# This section provides a list of the available interfaces before prompting the user.
+IFACE=
+IF_OK=0
+IFACE_LIST=$(nmcli dev | sed '1d' | awk '{print $1}')
+while [ -z "$IFACE" ]; do
+  echo -n "Network interface name: (available interfaces: "
+  echo -n $IFACE_LIST
+  echo ")"
+  echo -n "> "
+  read IFACE
+
+  # Check if $IFACE is zero lenght
+  if [ -z "$IFACE" ]; then
+    echo "Network interface name cannot be blank"
+    echo
+  else
+    # Check if the interface exists
+    for ifname_chk in $IFACE_LIST; do
+      if [ "$IFACE" == "$ifname_chk" ]; then
+        IF_OK=1
+      fi
+    done
+
+    if [ $IF_OK -ne 1 ]; then
+      echo "Network interface does not exist"
+      echo "Choose and interface among this list: $IFACE_LIST"
+      IFACE=
+    fi
+  fi
+done
+
+echo
+
+# Connection name
+CONN_NAME=
+CONN_LIST=$(nmcli con | sed '1d' | awk '{print $1}')
+while [ -z "$CONN_NAME" ]; do
+  echo -n "Connection name: (yet used connection names: "
+  echo -n $CONN_LIST
+  echo ") "
+  echo -n "> "
+  read CONN_NAME
+
+  # Check if $CONN_NAME is zero lenght
+  if [ -z "$CONN_NAME" ]; then
+    echo "Connection name cannot be blank"
+    echo
+  else
+  # Check if the connection name already exists
+  for conn_chk in $CONN_LIST; do
+    if [ "$conn_chk" == "$CONN_NAME" ]; then
+      echo "Connection name already exists"
+      echo
+      CONN_NAME=
+    fi
+  done
+  fi
+done
+
+echo
+
+# Static IPv4 address
+# The IP address must have the format address/prefix.
+IP_ADDR=
+while [ -z "$IP_ADDR" ]; do
+  echo "IPv4 address + Network prefix (leave blank for DHCP):"
+  echo -n "> "
+  read IP_ADDR
+
+  # Check if ip address has a valid format
+  if [ -n "$IP_ADDR" ]; then
+    # Using a regular expression pattern to check the IP address
+    echo "$IP_ADDR" | grep '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/[0-9]*' &> /dev/null
+    if [ $? -ne 0 ]; then
+      echo "Invalid IPv4 address. Format: xxx.xxx.xxx.xxx/yy"
+      echo
+      IP_ADDR=
+    fi
+  else
+    IP_ADDR="__dhcp__"
+  fi
+done
+
+echo
+
+# If static ip address is set, collects default gateway and dns address
+if [ "$IP_ADDR" != "__dhcp__" ]; then
+
+ # Default Gateway
+ # The default gateway is not mandatory when creating a new connection if the host does not have to connect to external networks.
+ GW_ADDR=
+  while [ -z "$GW_ADDR" ]; do
+    echo "Default gateway address (leave blank for none):"
+    echo -n "> "
+    read GW_ADDR
+
+    # Check if ip address has a valid format
+    if [ -n "$GW_ADDR" ]; then
+      echo "$GW_ADDR" | grep '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' &> /dev/null
+      if [ $? -ne 0 ]; then
+        echo "Invalid gateway address. Format: xxx.xxx.xxx.xxx"
+        echo
+        GW_ADDR=
+      fi
+    else
+      GW_ADDR="__blank__"
+    fi
+  done
+
+  echo
+
+  # DNS address section
+  # The DNS addrees is not mandatory when creating a new connection. Obviously, if no DNS is specified the host won't be able rely on DNS to resolve internal and external hostnames.
+  DNS_ADDR=
+  while [ -z "$DNS_ADDR" ]; do
+    echo "Primary DNS address (leave blank for none):"
+    echo -n "> "
+    read DNS_ADDR
+
+    # Check if ip address has a valid format
+    if [ -n "$DNS_ADDR" ]; then
+      echo "$DNS_ADDR" | grep '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' &> /dev/null
+      if [ $? -ne 0 ]; then
+        echo "Invalid DNS address. Format: xxx.xxx.xxx.xxx"
+        echo
+        DNS_ADDR=
+      fi
+    else
+      DNS_ADDR="__blank__"
+    fi
+  done
+  echo
+fi
+
+# Auto Connect
+echo "Autoconnect (Y|N):"
+echo -n "> "
+read AUTO
+case $AUTO in
+  y|Y|yes|YES) AUTO=yes;;
+  n|N|no|NO) AUTO=no;;
+  *) echo "Ambiguous choice, assuming autoconnect=no"
+    AUTO=no
+    ;;
+esac
+
+# This configurazione summary section is useful for the user to recheck the input before proceeding
+
+echo
+echo +----------------------------------------------------+
+echo "  Configuration summary:"
+echo -n "  Interface name:"
+echo "$IFACE"
+echo -n "  Connection name: "
+echo "$CONN_NAME"
+echo -n "  Ip address: "
+if [ "$IP_ADDR" != "__dhcp__" ]; then
+  echo "$IP_ADDR"
+  echo -n "  Default gateway: "
+  if [ "$GW_ADDR" != "__blank__" ]; then
+    echo "$GW_ADDR"
+  else
+    echo "none"
+  fi
+  echo -n "  Primary DNS: "
+  if [ "$DNS_ADDR" != "__blank__" ]; then
+    echo "$DNS_ADDR"
+  else
+    echo "none"
+  fi
+else
+  echo "DHCP"
+fi
+echo -n "  Autoconnect: "
+echo "$AUTO"
+echo +----------------------------------------------------+
+echo
+
+# End data collection
+
+#*****************************************************************************#
+
+# Begin connection configuration section
+
+echo -n "Are you sure you want to proceed? ([Y]es|[N]o) "
+read CHOICE
+case $CHOICE in
+  y|Y|yes|YES) echo "Invoking Network Manager to configure the connection..."
+     if [ "$IP_ADDR" == "__dhcp__" ]; then
+       nmcli con add type ethernet con-name "${CONN_NAME}" ifname ${IFACE} autoconnect ${AUTO} &> /dev/null
+       if [ $? -ne 0 ]; then
+         echo "FATAL: error during the execution of command \"nmcli con add type ethernet con-name ${CONN_NAME} ifname ${IFACE} autoconnect ${AUTO}\". Error $?"
+         exit 1
+       fi
+     else
+       if [ "GW_ADDR" == "__blank__" ]; then
+         nmcli con add type ethernet con-name "${CONN_NAME}" ifname ${IFACE} autoconnect ${AUTO} ip4 ${IP_ADDR} &> /dev/null
+         if [ $? -ne 0 ]; then
+           echo "FATAL: error during the execution of command \"nmcli con add type ethernet con-name ${CONN-NAME} ifname ${IFACE} autoconnect ${AUTO} ip4 ${IP_ADDR}\". Error $?"
+           exit 1
+         fi
+       else
+         nmcli con add type ethernet con-name "${CONN_NAME}" ifname ${IFACE} autoconnect ${AUTO} ip4 ${IP_ADDR} gw4 ${GW_ADDR} &> /dev/null
+         if [ $? -ne 0 ]; then
+           echo "FATAL: error during the execution of command \"nmcli con add type ethernet con-name ${CONN_NAME} ifname ${IFACE} autoconnect ${AUTO} ip4 ${IP_ADDR} gw4 ${GW_ADDR}\". Error $?"
+           exit 1
+         fi
+       fi
+
+       if [ "$DNS_ADDR" != "__blank__" ]; then
+         nmcli con mod "${CONN_NAME}" ipv4.dns ${DNS_ADDR}
+         if [ $? -ne 0 ]; then
+           echo "FATAL: error during the execution of command nmcli con mod. Error $?"
+           exit 1
+         fi
+       fi
+     fi
+
+     echo
+     CONN_UUID=$(nmcli conn | grep "${CONN_NAME}" | awk '{print $2}')
+     echo "Network Manager has successfully added the new connection \"$CONN_NAME\" with UUID ${CONN_UUID}."
+
+     # Check if the user wants to immediately activate the connection
+     echo -n "Activate the connection? "
+     read CONN_UP
+     case $CONN_UP in
+       y|Y|yes|YES) nmcli con up "${CONN_NAME}" &> /dev/null
+         if [ $? -ne 0 ]; then
+           echo "FATAL: error during the execution of command \"nmcli con up ${CONN_NAME}\". Cannot bring the connection $CONN_NAME up. Error $?"
+           exit 1
+         else
+           echo "Network Manager successfully activated the connection $CONN_NAME. Goodbye"
+         fi
+         ;;
+       *) echo "Goodbye.";;
+     esac
+     ;;
+  n|N|no|NO) echo "You choosed not to update your network configuration. Goodbye."
+     echo
+     exit 0
+     ;;
+  *) echo "Wrong selection. Exiting with no action."
+     echo
+     exit 1
+     ;;
+esac
+
+exit 0
